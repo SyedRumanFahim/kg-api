@@ -1,38 +1,39 @@
+# Stage 1: Build PHP dependencies
 FROM php:8.3-fpm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git curl libpng-dev libonig-dev libxml2-dev zip unzip libssl-dev pkg-config \
-    && docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd
+    nginx supervisor
 
-# Install MongoDB extension
-RUN pecl install mongodb \
-    && docker-php-ext-enable mongodb
+# PHP extensions
+RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd
 
-# Install Composer
+# MongoDB extension
+RUN pecl install mongodb && docker-php-ext-enable mongodb
+
+# Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www
 
-# Copy project files
+# Copy project
 COPY . .
 
 # Install PHP dependencies
 RUN composer install --optimize-autoloader
 
-# Set permissions for Laravel
-RUN mkdir -p /var/www/storage/framework/{sessions,views,cache} \
-    && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
-    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
+# Laravel permissions
+RUN mkdir -p storage/framework/{sessions,views,cache} \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R 775 storage bootstrap/cache
 
-# Clear and cache configs
-RUN php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
+# Copy your Nginx config from ./docker/nginx/default.conf
+COPY ./docker/nginx/default.conf /etc/nginx/sites-available/default
 
-# Expose port 8080 for Render
+# Expose port
 EXPOSE 8080
 
-# Start Laravel on port 8080
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]
+# Start PHP-FPM + Nginx
+CMD ["sh", "-c", "php-fpm -D && nginx -g 'daemon off;'"]
